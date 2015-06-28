@@ -19,120 +19,91 @@
 //B = (BKY * (Y-16) + BKU * (U-128) + BKV * (V-128)) >> 10;
 //G = (GKY * (Y-16) + GKU * (U-128) + GKV * (V-128)) >> 10;
 //R = (RKY * (Y-16) + RKU * (U-128) + RKV * (V-128)) >> 10;
+inline void unpack(uint8_t * mem, __m128i* y, __m128i* u ,__m128i* v){
+    __m128i vec=_mm_loadl_epi64((__m128i*)(mem));
+
+    *v = _mm_set1_epi16(255); // store of mask
+    *y = _mm_and_si128(*v,vec);
+    *u = _mm_srli_epi32(*v,8);
+    *u =_mm_and_si128(*u,vec);
+    *v = _mm_slli_epi32(*v,24);
+    *v=_mm_and_si128(*v,vec);
+
+    vec=_mm_setzero_si128();
+
+    *u = _mm_srli_epi32(*u,8); // 0 0 0 u
+    *v = _mm_srli_epi32(*v,24);// 0 0 0 v
+
+    *u =  _mm_or_si128(*u,_mm_slli_epi32(*u,16)); // 0 u 0 u
+    *v = _mm_or_si128(*v,_mm_slli_epi32(*v,16)); // 0 v 0 v
+
+    *y = _mm_sub_epi16(*y,_mm_set1_epi16(16));
+    *u = _mm_sub_epi16(*u,_mm_set1_epi16(128));
+    *v = _mm_sub_epi16(*v,_mm_set1_epi16(128));
+
+    *y = _mm_unpacklo_epi16(*y,vec);
+    *u = _mm_unpacklo_epi16(*u,vec);
+    *v = _mm_unpacklo_epi16(*v,vec);
+}
+inline __m128i madd3(__m128i a, __m128i b, __m128i c, int ka, int kb, int kc){
+  __m128i sub1=_mm_set_epi16(ka, kb, ka, kb, ka, kb, ka, kb);
+  a = _mm_slli_epi32(a, 16);
+  a = _mm_or_si128(a, b);
+  sub1 =_mm_madd_epi16(sub1,a);
+  __m128i sub3=_mm_set1_epi16(kc);
+  sub3 =_mm_madd_epi16(sub3,c);
+  sub1 = _mm_add_epi32(sub1,sub3);
+  sub1 = _mm_srai_epi32(sub1,10);
+  return sub1;
+}
+inline __m128i  upBound(__m128i reg, uint32_t value){
+      __m128i sub3 = _mm_set1_epi32(value);
+			__m128i sub2 = _mm_cmplt_epi32(reg,sub3);
+			reg = _mm_and_si128(reg,sub2);
+			sub2 = _mm_andnot_si128(sub2,sub3);
+			reg = _mm_or_si128(reg,sub2);
+      return reg;
+}
+inline __m128i lowBoundZero(__m128i reg){
+      __m128i sub3 = _mm_setzero_si128();
+			__m128i sub2 = _mm_cmpgt_epi32(reg,sub3);
+			reg = _mm_and_si128(reg,sub2);
+      return reg;
+}
 void process_vector(uint8_t *src,uint8_t *dst,int width,int height)
 {
 	for(int i=0;i<height;++i)
 		for(int j=0;j<width;j+=4){
-			__m128i vec=_mm_loadl_epi64((__m128i*)(src+i*width*2+j*2));
-
-			__m128i v=_mm_set1_epi16(255); // store of mask
-			__m128i y=_mm_and_si128(v,vec);
-			__m128i u=_mm_and_si128(_mm_srli_epi32(v,8),vec);
-			v=_mm_and_si128(_mm_slli_epi32(v,24),vec);
-
-			vec=_mm_setzero_si128();
-
-			u=_mm_srli_epi32(u,8); // 0 0 0 u
-			v=_mm_srli_epi32(v,24);// 0 0 0 v
-
-			u=_mm_or_si128(u,_mm_slli_epi32(u,16)); // 0 u 0 u
-			v=_mm_or_si128(v,_mm_slli_epi32(v,16)); // 0 v 0 v
-
-			y=_mm_sub_epi16(y,_mm_set1_epi16(16));
-			u=_mm_sub_epi16(u,_mm_set1_epi16(128));
-			v=_mm_sub_epi16(v,_mm_set1_epi16(128));
-
-			y = _mm_unpacklo_epi16(y,vec);
-			u = _mm_unpacklo_epi16(u,vec);
-			v = _mm_unpacklo_epi16(v,vec);
-
-
+		
+      __m128i y;
+      __m128i u;
+      __m128i v;
+      unpack(src+i*width*2+j*2,&y,&u,&v);
 			//alfa
-			vec=_mm_set1_epi32(3);
-
-			//R component
-			
-      __m128i sub1=_mm_set1_epi16(RKY);
-			__m128i sub2=_mm_set1_epi16(RKU);
-			__m128i sub3=_mm_set1_epi16(RKV);
-        
-			sub1=_mm_madd_epi16(sub1,y);
-			sub2=_mm_madd_epi16(sub2,u);
-			sub3=_mm_madd_epi16(sub3,v);
-
-			sub1= _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(sub1,sub2),sub3),10);
+			__m128i vec = _mm_set1_epi32(3);
       
-     
-      sub3 = _mm_set1_epi32(1023);
-			sub2 = _mm_cmplt_epi32(sub1,sub3);
-			sub1 = _mm_and_si128(sub1,sub2);
-			sub2 = _mm_andnot_si128(sub2,sub3);
-			sub1 = _mm_or_si128(sub1,sub2);
-        
-			sub3 = _mm_setzero_si128();
-			sub2 = _mm_cmpgt_epi32(sub1,sub3);
-			sub1 = _mm_and_si128(sub1,sub2);
-			//sub2 = _mm_andnot_si128(sub2,sub3);
-			//sub1 = _mm_or_si128(sub1,sub2);
-      
+      __m128i sub1 = madd3(y,u,v,RKY,RKU,RKV);
+      sub1 = upBound(sub1, 1023);
+      sub1 = lowBoundZero(sub1);
       sub1 = _mm_slli_epi32(sub1,2);
 
 			vec=_mm_or_si128(vec,sub1);
 
 			//G component
-      
-			 sub1=_mm_set1_epi16(GKY);
-			 sub2=_mm_set1_epi16(GKU);
-			 sub3=_mm_set1_epi16(GKV);
-
-			sub1=_mm_madd_epi16(sub1,y);
-			sub2=_mm_madd_epi16(sub2,u);
-			sub3=_mm_madd_epi16(sub3,v);
-
-			sub1= _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(sub1,sub2),sub3),10);
-      
-      		
-			sub3 = _mm_set1_epi32(1023);
-			sub2 = _mm_cmplt_epi32(sub1,sub3);
-			sub1 = _mm_and_si128(sub1,sub2);
-			sub2 = _mm_andnot_si128(sub2,sub3);
-			sub1 = _mm_or_si128(sub1,sub2);
-
-			sub3 = _mm_setzero_si128();
-			sub2 = _mm_cmpgt_epi32(sub1,sub3);
-			sub1 = _mm_and_si128(sub1,sub2);
-			//sub2 = _mm_andnot_si128(sub2,sub3);
-			//sub1 = _mm_or_si128(sub1,sub2);
+      sub1 = madd3(y,u,v, GKY,GKU,GKV);
+			sub1 = upBound(sub1, 1023);
+      sub1 = lowBoundZero(sub1);
 
 			sub1 = _mm_slli_epi32(sub1,12);
 
 			vec=_mm_or_si128(vec,sub1);
 
 			//	B component
-			
-       sub1=_mm_set1_epi16(BKY);
-			 sub2=_mm_set1_epi16(BKU);
-			 sub3=_mm_set1_epi16(BKV);
-
-			sub1=_mm_madd_epi16(sub1,y);
-			sub2=_mm_madd_epi16(sub2,u);
-			sub3=_mm_madd_epi16(sub3,v);
-
-			sub1= _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(sub1,sub2),sub3),10);
+			sub1 = madd3(y,u,v,BKY,BKU,BKV);
+			sub1 = upBound(sub1, 1023);
+      sub1 = lowBoundZero(sub1);
       
-      		sub3 = _mm_set1_epi32(1023);
-			sub2 = _mm_cmplt_epi32(sub1,sub3);
-			sub1 = _mm_and_si128(sub1,sub2);
-			sub2 = _mm_andnot_si128(sub2,sub3);
-			sub1 = _mm_or_si128(sub1,sub2);
-
-			sub3 = _mm_setzero_si128();
-			sub2 = _mm_cmpgt_epi32(sub1,sub3);
-			sub1 = _mm_and_si128(sub1,sub2);
-			//sub2 = _mm_andnot_si128(sub2,sub3);
-			//sub1 = _mm_or_si128(sub1,sub2);
-
-			sub1 = _mm_slli_epi32(sub1,22);
+      sub1 = _mm_slli_epi32(sub1,22);
 
 			vec=_mm_or_si128(vec,sub1);
 

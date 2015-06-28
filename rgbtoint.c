@@ -151,7 +151,7 @@ uint8_t* createframe(int wid,int hei)
 int main()
 {
 	clock_t t1,t2;
-	int testnum=1000;
+	int testnum=100;
 	uint64_t du,dv;
 	int wid=640,hei=480;
 	uint8_t test[]={10,11,12,20,21,22,30,31,32,40,41,42,50,51,52,60};

@@ -175,7 +175,7 @@ int test()
 		createframe(wid*4,hei,src);
 		process_usuall(src,dst1,wid,hei);
 		process_vector(src,dst2,wid,hei);
-		if(!check((uint8_t*)dst1,(uint8_t*)dst2,wid,hei))
+		if(!check((uint8_t*)dst1,(uint8_t*)dst2,wid*2,hei))
 		{
 			 //puts("au");
 			 ++fail;
